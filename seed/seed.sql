@@ -1,6 +1,9 @@
 -- Seed data for RealWorld load testing.
 -- Safe to run multiple times: all inserts use ON CONFLICT DO NOTHING.
 -- Password for all seed users: Password1!
+--
+-- HOT_ARTICLE_COMMENTS: number of comments to seed on the hot article.
+-- Adjust this to stress test comment retrieval at different scales.
 
 BEGIN;
 
@@ -135,5 +138,50 @@ SELECT
 FROM generate_series(1, 10000) AS gs(i)
 JOIN seed_users u ON u.idx =  gs.i      % (SELECT count(*)::int FROM seed_users)
 JOIN seed_articles a ON a.idx = (gs.i * 31) % (SELECT count(*)::int FROM seed_articles);
+
+-- ============================================================
+-- Hot article: one article with thousands of comments to stress
+-- test comment retrieval under realistic viral-post conditions.
+-- Slug is fixed so k6 can target it directly.
+-- ============================================================
+INSERT INTO articles (slug, title, description, body, author_id, created_at, updated_at)
+SELECT
+    'hot-article',
+    'The Article Everyone Is Talking About',
+    'A viral post that attracted thousands of comments.',
+    repeat(
+        'Lorem ipsum dolor sit amet, consectetur adipiscing elit. '
+        'Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. '
+        'Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip. '
+        'Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat. ',
+        15
+    ),
+    (SELECT id FROM seed_users WHERE idx = 0),
+    NOW() - interval '30 days',
+    NOW() - interval '30 days'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO article_tags (article_id, tag_id)
+SELECT
+    (SELECT id FROM articles WHERE slug = 'hot-article'),
+    (SELECT id FROM tags WHERE name = 'technology')
+ON CONFLICT DO NOTHING;
+
+-- 5000 comments from rotating seed users, spread over the past 30 days.
+-- Change 5000 to any value to test at different scales.
+-- The outer WHERE skips the entire insert if comments already exist (idempotency).
+INSERT INTO comments (body, author_id, article_id, created_at, updated_at)
+SELECT
+    'Hot article comment ' || gs.i || ': this really made me think.',
+    u.id,
+    (SELECT id FROM articles WHERE slug = 'hot-article'),
+    NOW() - interval '30 days' + (gs.i * (interval '30 days' / 5000)),
+    NOW() - interval '30 days' + (gs.i * (interval '30 days' / 5000))
+FROM generate_series(1, 5000) AS gs(i)
+JOIN seed_users u ON u.idx = gs.i % (SELECT count(*)::int FROM seed_users)
+WHERE (
+    SELECT count(*) FROM comments
+    WHERE article_id = (SELECT id FROM articles WHERE slug = 'hot-article')
+) = 0;
 
 COMMIT;

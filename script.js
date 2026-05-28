@@ -3,6 +3,7 @@ import { sleep, check } from 'k6';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8090';
 
+const HOT_ARTICLE_SLUG = 'hot-article';
 const SEED_USER_COUNT = 1000;
 const PASSWORD = 'Password1!';
 const TAGS = [
@@ -49,6 +50,17 @@ export const options = {
       preAllocatedVUs: 2,
       maxVUs: 5,
       exec: 'contentCreator',
+    },
+    // Sustained traffic against a single high-comment article, simulating
+    // a viral post where every visitor reads (and sometimes adds) comments.
+    hot_article: {
+      executor: 'constant-arrival-rate',
+      rate: 30,
+      timeUnit: '1m',
+      duration: __ENV.DURATION || '1h',
+      preAllocatedVUs: 5,
+      maxVUs: 10,
+      exec: 'hotArticleReader',
     },
   },
 };
@@ -185,4 +197,33 @@ export function contentCreator() {
   }
 
   sleep(5 + Math.random() * 10);
+}
+
+export function hotArticleReader() {
+  // Every visitor reads the article body
+  const articleRes = http.get(`${BASE_URL}/api/articles/${HOT_ARTICLE_SLUG}`, jsonHeaders());
+  check(articleRes, { 'hot article 200': (r) => r.status === 200 });
+
+  // Every visitor loads the comment list — this is the expensive query
+  const commentsRes = http.get(
+    `${BASE_URL}/api/articles/${HOT_ARTICLE_SLUG}/comments`,
+    jsonHeaders(),
+  );
+  check(commentsRes, { 'hot article comments 200': (r) => r.status === 200 });
+
+  // 1 in 10 visitors leaves a comment (authenticated)
+  if (Math.random() < 0.1) {
+    const user = randomSeedUser();
+    const token = login(user.email, user.password);
+    if (token) {
+      const commentRes = http.post(
+        `${BASE_URL}/api/articles/${HOT_ARTICLE_SLUG}/comments`,
+        JSON.stringify({ comment: { body: `Just read this — really insightful. (${uid()})` } }),
+        jsonHeaders(token),
+      );
+      check(commentRes, { 'hot article add comment 201': (r) => r.status === 201 });
+    }
+  }
+
+  sleep(0.5 + Math.random() * 2);
 }
