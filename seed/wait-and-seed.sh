@@ -10,6 +10,6 @@ until wget -qO- "${APP_URL}/api/healthcheck" >/dev/null 2>&1; do
 done
 
 echo "App is up. Running seed script..."
-psql -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -d "${PGDATABASE}" -f /seed.sql
+psql -v ON_ERROR_STOP=1 -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -d "${PGDATABASE}" -f /seed.sql
 
 echo "Seeding complete."

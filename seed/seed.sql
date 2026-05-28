@@ -40,7 +40,7 @@ INSERT INTO tags (name) VALUES
 ON CONFLICT DO NOTHING;
 
 CREATE TEMP TABLE IF NOT EXISTS seed_tags AS
-SELECT id, (row_number() OVER (ORDER BY id) - 1)::int AS idx
+SELECT id, name, (row_number() OVER (ORDER BY id) - 1)::int AS idx
 FROM tags;
 
 -- ============================================================
