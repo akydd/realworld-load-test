@@ -1,4 +1,20 @@
 services:
+  seeder:
+    image: postgres:17-alpine
+    environment:
+      APP_URL: ${BASE_URL:-http://host.docker.internal:8090}
+      PGPASSWORD: ${DB_PASSWORD:-password}
+      PGHOST: ${DB_HOST:-host.docker.internal}
+      PGPORT: ${DB_PORT:-8095}
+      PGUSER: ${DB_USER:-admin}
+      PGDATABASE: ${DB_NAME:-app}
+    volumes:
+      - ./seed/seed.sql:/seed.sql:ro
+      - ./seed/wait-and-seed.sh:/wait-and-seed.sh:ro
+    command: sh /wait-and-seed.sh
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
   k6:
     image: grafana/k6
     command: run /scripts/script.js
@@ -9,3 +25,6 @@ services:
       - ./script.js:/scripts/script.js:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      seeder:
+        condition: service_completed_successfully

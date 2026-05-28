@@ -1,15 +1,26 @@
 import http from 'k6/http';
 import { sleep, check } from 'k6';
-import { SharedArray } from 'k6/data';
 
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:8090';
 
-// Seed data created during setup, shared across all VUs
-const state = new SharedArray('state', function () { return [{}]; });
+const SEED_USER_COUNT = 1000;
+const PASSWORD = 'Password1!';
+const TAGS = [
+  'technology', 'programming', 'go', 'python', 'javascript',
+  'typescript', 'rust', 'java', 'devops', 'cloud',
+  'aws', 'gcp', 'azure', 'kubernetes', 'docker',
+  'databases', 'postgresql', 'mysql', 'redis', 'mongodb',
+  'microservices', 'api', 'rest', 'graphql', 'machine-learning',
+  'ai', 'data-science', 'web-development', 'frontend', 'backend',
+  'mobile', 'ios', 'android', 'react', 'vue',
+  'angular', 'node', 'startup', 'productivity', 'career',
+  'tutorial', 'beginners', 'open-source', 'security', 'performance',
+  'testing', 'architecture', 'design-patterns', 'agile', 'culture',
+];
 
 export const options = {
   scenarios: {
-    // Most traffic: anonymous users browsing articles
+    // Dominant traffic: anonymous users browsing and reading
     anonymous_reader: {
       executor: 'constant-arrival-rate',
       rate: 60,
@@ -19,7 +30,7 @@ export const options = {
       maxVUs: 20,
       exec: 'anonymousReader',
     },
-    // Authenticated users reading their feed and profiles
+    // Authenticated users checking their feed and favoriting articles
     authenticated_reader: {
       executor: 'constant-arrival-rate',
       rate: 20,
@@ -29,7 +40,7 @@ export const options = {
       maxVUs: 10,
       exec: 'authenticatedReader',
     },
-    // Small cohort creating articles, comments, and favorites
+    // Small cohort publishing articles and leaving comments
     content_creator: {
       executor: 'constant-arrival-rate',
       rate: 5,
@@ -49,19 +60,19 @@ function uid() {
 }
 
 function jsonHeaders(token) {
-  const headers = { 'Content-Type': 'application/json' };
-  if (token) headers['Authorization'] = `Token ${token}`;
-  return { headers };
+  const h = { 'Content-Type': 'application/json' };
+  if (token) h['Authorization'] = `Token ${token}`;
+  return { headers: h };
 }
 
-function register(username, email, password) {
-  const res = http.post(
-    `${BASE_URL}/api/users`,
-    JSON.stringify({ user: { username, email, password } }),
-    jsonHeaders(),
-  );
-  check(res, { 'register 201': (r) => r.status === 201 });
-  return res.status === 201 ? res.json('user.token') : null;
+function randomTag() {
+  return TAGS[Math.floor(Math.random() * TAGS.length)];
+}
+
+// Pick a random seeded user by index.
+function randomSeedUser() {
+  const i = Math.floor(Math.random() * SEED_USER_COUNT) + 1;
+  return { email: `seed-user-${i}@example.com`, password: PASSWORD };
 }
 
 function login(email, password) {
@@ -74,127 +85,95 @@ function login(email, password) {
   return res.status === 200 ? res.json('user.token') : null;
 }
 
-function getSlugs() {
-  const res = http.get(`${BASE_URL}/api/articles?limit=20`, jsonHeaders());
+// Fetch a page of article slugs, optionally filtered by tag.
+function getSlugs(tag) {
+  const url = tag
+    ? `${BASE_URL}/api/articles?tag=${encodeURIComponent(tag)}&limit=20`
+    : `${BASE_URL}/api/articles?limit=20`;
+  const res = http.get(url, jsonHeaders());
   if (res.status !== 200) return [];
   return (res.json('articles') || []).map((a) => a.slug);
 }
 
-// --- Setup: seed users and articles so readers have something to find ---
-
-export function setup() {
-  const password = 'Password1!';
-
-  // Seed author
-  const authorId = uid();
-  const authorEmail = `author-${authorId}@example.com`;
-  const authorToken = register(`author-${authorId}`, authorEmail, password);
-
-  // Seed reader (for authenticated_reader scenario)
-  const readerId = uid();
-  const readerEmail = `reader-${readerId}@example.com`;
-  register(`reader-${readerId}`, readerEmail, password);
-
-  // Seed articles
-  const slugs = [];
-  if (authorToken) {
-    const tags = ['tech', 'go', 'cloud', 'devops', 'postgres'];
-    for (let i = 0; i < 20; i++) {
-      const id = uid();
-      const res = http.post(
-        `${BASE_URL}/api/articles`,
-        JSON.stringify({
-          article: {
-            title: `Seed Article ${id}`,
-            description: 'A seeded article for load testing.',
-            body: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. '.repeat(20),
-            tagList: [tags[i % tags.length]],
-          },
-        }),
-        jsonHeaders(authorToken),
-      );
-      if (res.status === 201) slugs.push(res.json('article.slug'));
-    }
-  }
-
-  return {
-    readerEmail,
-    readerPassword: password,
-    authorEmail,
-    authorPassword: password,
-    slugs,
-  };
-}
-
 // --- Scenarios ---
 
-export function anonymousReader(data) {
-  const slugs = data.slugs.length > 0 ? data.slugs : getSlugs();
-
-  // Weighted action: 70% list, 30% read specific article
+export function anonymousReader() {
   if (Math.random() < 0.7) {
-    const tags = ['tech', 'go', 'cloud', 'devops', 'postgres'];
-    const tag = tags[Math.floor(Math.random() * tags.length)];
-    const res = http.get(`${BASE_URL}/api/articles?tag=${tag}&limit=10`, jsonHeaders());
+    // Browse articles by tag
+    const res = http.get(
+      `${BASE_URL}/api/articles?tag=${encodeURIComponent(randomTag())}&limit=10`,
+      jsonHeaders(),
+    );
     check(res, { 'list articles 200': (r) => r.status === 200 });
-  } else if (slugs.length > 0) {
-    const slug = slugs[Math.floor(Math.random() * slugs.length)];
-    const res = http.get(`${BASE_URL}/api/articles/${slug}`, jsonHeaders());
-    check(res, { 'get article 200': (r) => r.status === 200 });
+  } else {
+    // Read a specific article and its comments
+    const slugs = getSlugs(randomTag());
+    if (slugs.length > 0) {
+      const slug = slugs[Math.floor(Math.random() * slugs.length)];
 
-    // Also fetch comments while reading an article
-    const commentsRes = http.get(`${BASE_URL}/api/articles/${slug}/comments`, jsonHeaders());
-    check(commentsRes, { 'get comments 200': (r) => r.status === 200 });
+      const articleRes = http.get(`${BASE_URL}/api/articles/${slug}`, jsonHeaders());
+      check(articleRes, { 'get article 200': (r) => r.status === 200 });
+
+      const commentsRes = http.get(`${BASE_URL}/api/articles/${slug}/comments`, jsonHeaders());
+      check(commentsRes, { 'get comments 200': (r) => r.status === 200 });
+    }
   }
 
   sleep(1 + Math.random() * 4);
 }
 
-export function authenticatedReader(data) {
-  const token = login(data.readerEmail, data.readerPassword);
+export function authenticatedReader() {
+  const user = randomSeedUser();
+  const token = login(user.email, user.password);
   if (!token) return;
 
-  const slugs = data.slugs.length > 0 ? data.slugs : getSlugs();
-
-  // Read feed
   const feedRes = http.get(`${BASE_URL}/api/articles/feed?limit=10`, jsonHeaders(token));
   check(feedRes, { 'feed 200': (r) => r.status === 200 });
 
-  // Favorite a random article
+  // Favorite a random article from the current tag listing
+  const slugs = getSlugs(randomTag());
   if (slugs.length > 0) {
     const slug = slugs[Math.floor(Math.random() * slugs.length)];
-    const favRes = http.post(`${BASE_URL}/api/articles/${slug}/favorite`, null, jsonHeaders(token));
+    const favRes = http.post(
+      `${BASE_URL}/api/articles/${slug}/favorite`,
+      null,
+      jsonHeaders(token),
+    );
     check(favRes, { 'favorite 200': (r) => r.status === 200 });
   }
 
   sleep(2 + Math.random() * 8);
 }
 
-export function contentCreator(data) {
-  // Each content creator VU registers a fresh user so writes don't collide
+export function contentCreator() {
+  // Each invocation registers a fresh user so writes don't collide
   const id = uid();
-  const email = `creator-${id}@example.com`;
-  const token = register(`creator-${id}`, email, 'Password1!');
+  const regRes = http.post(
+    `${BASE_URL}/api/users`,
+    JSON.stringify({ user: { username: `creator-${id}`, email: `creator-${id}@example.com`, password: PASSWORD } }),
+    jsonHeaders(),
+  );
+  check(regRes, { 'register 201': (r) => r.status === 201 });
+  const token = regRes.status === 201 ? regRes.json('user.token') : null;
   if (!token) return;
 
-  // Create an article
-  const tags = ['tech', 'go', 'cloud', 'devops', 'postgres'];
+  // Publish an article
   const articleRes = http.post(
     `${BASE_URL}/api/articles`,
     JSON.stringify({
       article: {
         title: `Load Test Article ${id}`,
         description: 'Generated by load test.',
-        body: 'Lorem ipsum dolor sit amet. '.repeat(30),
-        tagList: [tags[Math.floor(Math.random() * tags.length)]],
+        body: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. '.repeat(30),
+        tagList: [randomTag()],
       },
     }),
     jsonHeaders(token),
   );
   check(articleRes, { 'create article 201': (r) => r.status === 201 });
 
-  // Comment on a seed article
-  const slugs = data.slugs.length > 0 ? data.slugs : getSlugs();
+  // Comment on an existing seed article
+  const slugs = getSlugs(randomTag());
   if (slugs.length > 0) {
     const slug = slugs[Math.floor(Math.random() * slugs.length)];
     const commentRes = http.post(
