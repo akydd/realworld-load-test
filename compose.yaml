@@ -1,0 +1,11 @@
+services:
+  k6:
+    image: grafana/k6
+    command: run /scripts/script.js
+    environment:
+      BASE_URL: ${BASE_URL:-http://host.docker.internal:8090}
+      DURATION: ${DURATION:-1h}
+    volumes:
+      - ./script.js:/scripts/script.js:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
