@@ -4,13 +4,14 @@ A [k6](https://k6.io) load test suite for any [RealWorld](https://github.com/got
 
 ## What it simulates
 
-Three concurrent user populations run for the full test duration:
+Four concurrent scenarios run for the full test duration:
 
 | Scenario | Rate | Behaviour |
 |---|---|---|
 | `anonymous_reader` | 60 req/min | Browses article lists by tag (70%) and reads individual articles with comments (30%) |
 | `authenticated_reader` | 20 req/min | Logs in as a seed user, reads feed, favorites a random article |
 | `content_creator` | 5 req/min | Registers a fresh user, publishes an article, leaves a comment |
+| `hot_article` | 30 req/min | Reads a single high-comment article and its full comment list on every request; 10% of iterations also post a new comment |
 
 ## Seed data
 
@@ -25,8 +26,15 @@ Before the load test starts, a seeder container connects directly to the databas
 | Follows | 10,000 | Each user follows 10 others, evenly distributed |
 | Favorites | 20,000 | Each user has 20 favorites, evenly distributed |
 | Comments | 10,000 | One per article, distributed across users |
+| Hot article | 1 | Fixed slug `hot-article`, seeded with 5,000 comments spread over 30 days |
 
 Seeding inserts directly via SQL rather than HTTP, so the full dataset is ready in seconds. All inserts use `ON CONFLICT DO NOTHING`, so the seeder is safe to run against a database that already has seed data — it will complete immediately and k6 will start normally.
+
+### Hot article
+
+The `hot-article` slug is a single article pre-loaded with 5,000 comments from rotating seed users, timestamped evenly over the past 30 days. The `hot_article` scenario hits it continuously, loading the full comment list on every request. Because 10% of iterations also post a new comment, the comment count grows throughout the test run — making the query progressively harder and revealing any degradation under an increasing result set.
+
+To change the comment count, edit the two `5000` literals in `seed/seed.sql` and re-run the seeder with a fresh database volume.
 
 ## Running
 
