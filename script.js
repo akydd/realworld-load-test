@@ -62,6 +62,18 @@ export const options = {
       maxVUs: 10,
       exec: 'hotArticleReader',
     },
+    // Intentional 4xx traffic at ~4% of total request rate, matching
+    // production error baselines. Checks expect the error codes so
+    // checks_failed stays quiet under normal conditions.
+    error_traffic: {
+      executor: 'constant-arrival-rate',
+      rate: 5,
+      timeUnit: '1m',
+      duration: __ENV.DURATION || '1h',
+      preAllocatedVUs: 2,
+      maxVUs: 5,
+      exec: 'errorTraffic',
+    },
   },
 };
 
@@ -226,4 +238,28 @@ export function hotArticleReader() {
   }
 
   sleep(0.5 + Math.random() * 2);
+}
+
+export function errorTraffic() {
+  const roll = Math.random();
+
+  if (roll < 0.5) {
+    // 404: nonexistent article slug
+    const res = http.get(`${BASE_URL}/api/articles/no-such-article-${uid()}`, jsonHeaders());
+    check(res, { '404 missing article': (r) => r.status === 404 });
+  } else if (roll < 0.8) {
+    // 401: protected endpoint with no token
+    const res = http.get(`${BASE_URL}/api/articles/feed`, jsonHeaders());
+    check(res, { '401 unauthenticated feed': (r) => r.status === 401 });
+  } else {
+    // 422: registration with empty required fields
+    const res = http.post(
+      `${BASE_URL}/api/users`,
+      JSON.stringify({ user: { username: '', email: '', password: '' } }),
+      jsonHeaders(),
+    );
+    check(res, { '422 invalid registration': (r) => r.status === 422 });
+  }
+
+  sleep(1 + Math.random() * 3);
 }
