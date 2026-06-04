@@ -12,6 +12,7 @@ Four concurrent scenarios run for the full test duration:
 | `authenticated_reader` | 20 req/min | Logs in as a seed user, reads feed, favorites a random article |
 | `content_creator` | 5 req/min | Registers a fresh user, publishes an article, leaves a comment |
 | `hot_article` | 30 req/min | Reads a single high-comment article and its full comment list on every request; 10% of iterations also post a new comment |
+| `error_traffic` | 5 req/min | Intentional 4xx traffic (~4% of total): 50% 404s on nonexistent slugs, 30% 401s against the authenticated feed, 20% 422s via empty registration payloads |
 
 ## Seed data
 
