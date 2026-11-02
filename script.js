@@ -19,8 +19,13 @@ const TAGS = [
   'testing', 'architecture', 'design-patterns', 'agile', 'culture',
 ];
 
-export const options = {
-  scenarios: {
+// MODE selects which scenario set runs:
+//   all   (default) — the five discrete scenarios run concurrently
+//   mixed            — a single blended scenario approximating daily traffic
+const MODE = __ENV.MODE || 'all';
+
+// The five discrete scenarios, each isolating one behaviour.
+const discreteScenarios = {
     // Dominant traffic: anonymous users browsing and reading
     anonymous_reader: {
       executor: 'constant-arrival-rate',
@@ -74,7 +79,27 @@ export const options = {
       maxVUs: 5,
       exec: 'errorTraffic',
     },
+};
+
+// A single blended scenario: every iteration draws one behaviour from a
+// weighted distribution tuned to a read-heavy blog backend's daily traffic
+// (~90% reads, ~8% writes, ~2% intentional errors). The total arrival rate
+// defaults to the combined rate of the five discrete scenarios (120/min)
+// and is overridable with the RATE env var.
+const mixedScenarios = {
+  mixed_traffic: {
+    executor: 'constant-arrival-rate',
+    rate: Number(__ENV.RATE) || 120,
+    timeUnit: '1m',
+    duration: __ENV.DURATION || '1h',
+    preAllocatedVUs: 20,
+    maxVUs: 40,
+    exec: 'mixedDailyTraffic',
   },
+};
+
+export const options = {
+  scenarios: MODE === 'mixed' ? mixedScenarios : discreteScenarios,
 };
 
 // --- Helpers ---
@@ -238,6 +263,33 @@ export function hotArticleReader() {
   }
 
   sleep(0.5 + Math.random() * 2);
+}
+
+// Weighted blend of the behaviours above, approximating a blog API's typical
+// daily traffic. Each entry is [cumulative threshold, behaviour]; the first
+// entry whose threshold exceeds the roll wins. Weights (not cumulative):
+//   anonymous browsing/reading .............. 60%  (read)
+//   hot-article reads ....................... 15%  (read, with 10% comment writes)
+//   authenticated feed + favorite ........... 15%  (read + light write)
+//   content creation (register/article/comment)  5%  (write)
+//   intentional 4xx errors ...................  5%  (error baseline)
+// Reads dominate (~90% of iterations), matching a read-heavy content backend.
+const MIX = [
+  [0.60, anonymousReader],
+  [0.75, hotArticleReader],
+  [0.90, authenticatedReader],
+  [0.95, contentCreator],
+  [1.00, errorTraffic],
+];
+
+export function mixedDailyTraffic() {
+  const roll = Math.random();
+  for (const [threshold, behaviour] of MIX) {
+    if (roll < threshold) {
+      behaviour();
+      return;
+    }
+  }
 }
 
 export function errorTraffic() {

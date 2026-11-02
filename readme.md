@@ -4,7 +4,14 @@ A [k6](https://k6.io) load test suite for any [RealWorld](https://github.com/got
 
 ## What it simulates
 
-Four concurrent scenarios run for the full test duration:
+The suite runs in one of two modes, selected with the `MODE` env var:
+
+- **`all`** (default) — the five discrete scenarios below run concurrently, each isolating one behaviour so you can read per-scenario metrics.
+- **`mixed`** — a single blended scenario that approximates a blog API's typical daily traffic (see [Mixed mode](#mixed-mode)).
+
+### Discrete scenarios (`MODE=all`)
+
+Five concurrent scenarios run for the full test duration:
 
 | Scenario | Rate | Behaviour |
 |---|---|---|
@@ -13,6 +20,25 @@ Four concurrent scenarios run for the full test duration:
 | `content_creator` | 5 req/min | Registers a fresh user, publishes an article, leaves a comment |
 | `hot_article` | 30 req/min | Reads a single high-comment article and its full comment list on every request; 10% of iterations also post a new comment |
 | `error_traffic` | 5 req/min | Intentional 4xx traffic (~4% of total): 50% 404s on nonexistent slugs, 30% 401s against the authenticated feed, 20% 422s via empty registration payloads |
+
+### Mixed mode
+
+With `MODE=mixed`, a single `mixed_traffic` scenario runs instead. Every iteration draws one of the behaviours above from a weighted distribution tuned to a read-heavy content backend:
+
+| Weight | Behaviour | Class |
+|---|---|---|
+| 60% | Anonymous browsing / reading | read |
+| 15% | Hot-article reads (10% of these also post a comment) | read + occasional write |
+| 15% | Authenticated feed + favorite | read + light write |
+| 5% | Content creation (register, publish, comment) | write |
+| 5% | Intentional 4xx errors | error baseline |
+
+This yields roughly **90% reads, 8% writes, and a 2% error floor** from one blended arrival stream, rather than five independent ones. The total arrival rate defaults to **120 req/min** (the combined rate of the five discrete scenarios) and is overridable with the `RATE` env var.
+
+```bash
+MODE=mixed docker compose run --rm k6
+MODE=mixed RATE=600 docker compose run --rm k6   # heavier blended load
+```
 
 ## Seed data
 

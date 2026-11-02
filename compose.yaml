@@ -21,6 +21,8 @@ services:
     environment:
       BASE_URL: ${BASE_URL:-http://host.docker.internal:8090}
       DURATION: ${DURATION:-1h}
+      MODE: ${MODE:-all}
+      RATE: ${RATE:-}
     volumes:
       - ./script.js:/scripts/script.js:ro
     extra_hosts:
