@@ -83,21 +83,19 @@ The seeder runs first, waits for the app's `/api/healthcheck` to respond, then s
 
 ### Pointing at a different backend
 
-Edit `BASE_URL` and the `DB_*` variables in your `.env` file:
+Edit `BASE_URL` (the API) and `DATABASE_URL` (the Postgres connection the seeder uses) in your `.env` file:
 
 ```bash
 # Local backend (default)
 BASE_URL=http://host.docker.internal:8090
-DB_HOST=host.docker.internal
-DB_PORT=8095     # the host-mapped postgres port
+DATABASE_URL=postgres://admin:password@host.docker.internal:8095/app
 
 # Remote backend
 BASE_URL=https://api.example.com
-DB_HOST=db.example.com
-DB_PORT=5432
+DATABASE_URL=postgres://admin:password@db.example.com:5432/app
 ```
 
-`host.docker.internal` resolves to the host machine from inside Docker, so the defaults work for any backend running locally without extra configuration.
+`DATABASE_URL` is a standard libpq connection URI (`postgres://USER:PASSWORD@HOST:PORT/DBNAME`); if the password contains URL-special characters such as `@`, `:` or `/`, percent-encode them (e.g. `@` → `%40`). `host.docker.internal` resolves to the host machine from inside Docker, so the defaults work for any backend running locally without extra configuration.
 
 ### Changing the duration
 
@@ -112,7 +110,7 @@ Or set `DURATION` in your `.env` file. k6 duration format: `30m`, `1h`, `4h`.
 If you have k6 and psql installed locally, seed and run separately:
 
 ```bash
-PGPASSWORD=password psql -h localhost -p 8095 -U admin -d app -f seed/seed.sql
+psql "postgres://admin:password@localhost:8095/app" -f seed/seed.sql
 BASE_URL=http://localhost:8090 DURATION=1h k6 run script.js
 ```
 

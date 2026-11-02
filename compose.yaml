@@ -2,12 +2,8 @@ services:
   seeder:
     image: postgres:17-alpine
     environment:
-      APP_URL: ${BASE_URL:-http://host.docker.internal:8090}
-      PGPASSWORD: ${DB_PASSWORD:-password}
-      PGHOST: ${DB_HOST:-host.docker.internal}
-      PGPORT: ${DB_PORT:-8095}
-      PGUSER: ${DB_USER:-admin}
-      PGDATABASE: ${DB_NAME:-app}
+      BASE_URL: ${BASE_URL:-http://host.docker.internal:8090}
+      DATABASE_URL: ${DATABASE_URL:-postgres://admin:password@host.docker.internal:8095/app}
     volumes:
       - ./seed/seed.sql:/seed.sql:ro
       - ./seed/wait-and-seed.sh:/wait-and-seed.sh:ro

@@ -1,5 +1,6 @@
 -- Seed data for RealWorld load testing.
--- Safe to run multiple times: all inserts use ON CONFLICT DO NOTHING.
+-- Safe to run multiple times: inserts use ON CONFLICT DO NOTHING where a unique
+-- constraint exists, and a WHERE-exists guard for comments (which have none).
 -- Password for all seed users: Password1!
 --
 -- HOT_ARTICLE_COMMENTS: number of comments to seed on the hot article.
@@ -127,6 +128,9 @@ ON CONFLICT DO NOTHING;
 -- ============================================================
 -- Comments: 10,000 comments spread across articles
 -- Multiplier 31 (prime) distributes comments across all articles.
+-- The comments table has no unique constraint to catch ON CONFLICT, so the
+-- outer WHERE skips the entire insert when seed comments already exist, the
+-- same idempotency guard used for the hot article below.
 -- ============================================================
 INSERT INTO comments (body, author_id, article_id, created_at, updated_at)
 SELECT
@@ -137,7 +141,11 @@ SELECT
     NOW() - (gs.i * interval '10 minutes')
 FROM generate_series(1, 10000) AS gs(i)
 JOIN seed_users u ON u.idx =  gs.i      % (SELECT count(*)::int FROM seed_users)
-JOIN seed_articles a ON a.idx = (gs.i * 31) % (SELECT count(*)::int FROM seed_articles);
+JOIN seed_articles a ON a.idx = (gs.i * 31) % (SELECT count(*)::int FROM seed_articles)
+WHERE (
+    SELECT count(*) FROM comments
+    WHERE body LIKE 'Seed comment %'
+) = 0;
 
 -- ============================================================
 -- Hot article: one article with thousands of comments to stress
